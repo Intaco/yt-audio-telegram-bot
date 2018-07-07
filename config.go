@@ -6,14 +6,15 @@ import (
 	"os"
 )
 
-type appConfig struct {
+//AppConfig defines bot configuration properties
+type AppConfig struct {
 	BotAPIKey     string  `json:"BotAPIKey"`
 	AdminID       int64   `json:"AdminID"`
 	AuthorizedIDs []int64 `json:"AuthorizedIDs"`
 	BannedIDs     []int64 `json:"BannedIDs"`
 }
 
-func writeConfig(cfg appConfig) error {
+func writeConfig(cfg AppConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err
@@ -36,8 +37,8 @@ func writeConfig(cfg appConfig) error {
 	err = os.Rename(f.Name(), "config.json")
 	return err
 }
-func loadConfig() (appConfig, error) {
-	cfg := appConfig{}
+func loadConfig() (AppConfig, error) {
+	cfg := AppConfig{}
 	configFile, err := os.Open("config.json")
 	defer configFile.Close()
 	if err != nil {

@@ -1,0 +1,9 @@
+builds:
+  - main: ./
+    binary: ytaudiobot
+    goos:
+      - windows
+      - darwin
+      - linux
+    goarch:
+      - amd64

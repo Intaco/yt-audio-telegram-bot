@@ -35,7 +35,7 @@ func ffmpegDecode(title string, extension string) (string, error) {
 
 var pendingAnswers = make(map[int64]bool)
 
-func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig appConfig) (appConfig, error) {
+func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig AppConfig) (AppConfig, error) {
 	parts := strings.Split(query.Data, ".")
 	if len(parts) != 2 {
 		return appConfig, fmt.Errorf("InlineKeyboardButton data incorrect, skipping")
@@ -62,7 +62,7 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, ap
 	_, err = bot.AnswerCallbackQuery(cbConfig)
 	return appConfig, err
 }
-func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg appConfig) {
+func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfig) {
 	chatID := message.Chat.ID
 	isBanned := false
 	for _, id := range cfg.BannedIDs {
