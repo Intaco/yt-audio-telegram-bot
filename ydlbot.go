@@ -142,27 +142,35 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg *appConf
 	}
 	bestFormat := bestFormats[0]
 	newFileName := fmt.Sprintf("%s%s.%s", filesDirPath, vid.Title, bestFormat.Extension)
-	file, err := os.Create(fmt.Sprintf("%s", newFileName))
+	videoFile, err := os.Create(fmt.Sprintf("%s", newFileName))
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
-	defer file.Close()
+
 	fmt.Printf("started downloading video %s\n", newFileName) //TODO hide debug info
-	err = vid.Download(bestFormat, file)
+	err = vid.Download(bestFormat, videoFile)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
+	videoFile.Close()
 	fmt.Printf("successfully finished downloading video %s\n", newFileName)
 	mp3FileName, err := ffmpegDecode(vid.Title, bestFormat.Extension)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
+	if _, err := os.Stat(newFileName); err == nil { //remove video file after success
+		err = os.Remove(newFileName)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+	}
 	log.Printf("[%d] %s", message.From.ID, message.Text)
 
-	file, err = os.Open(mp3FileName)
+	mp3File, err := os.Open(mp3FileName)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -170,16 +178,24 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg *appConf
 	audioCfg := tgbotapi.NewAudioUpload(message.Chat.ID, mp3FileName)
 	audioCfg.ReplyToMessageID = message.MessageID
 
-	msg, err := bot.Send(audioCfg)
+	_, err = bot.Send(audioCfg)
 
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
-	if _, err := os.Stat(mp3FileName); err == nil { //remove mp3 after success
-		os.Remove(mp3FileName)
+	err = mp3File.Close()
+	if err != nil {
+		fmt.Println(err.Error())
+		return
 	}
-	fmt.Printf("%v", msg.MessageID)
+	if _, err := os.Stat(mp3FileName); err == nil { //remove mp3 after success
+		err = os.Remove(mp3FileName)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+	}
 	return
 }
 func main() {
@@ -200,7 +216,7 @@ func main() {
 		fmt.Println(err.Error()) //TODO not verbose
 		return
 	}
-	bot.Debug = true
+	bot.Debug = false
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
@@ -212,7 +228,7 @@ func main() {
 				if err != nil {
 					fmt.Println(err.Error())
 				} else {
-					err = cfg.write()
+					err = cfg.write() //TODO safer rewrite
 					if err != nil {
 						fmt.Println(err.Error())
 					}
