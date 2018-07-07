@@ -13,7 +13,7 @@ type appConfig struct {
 	BannedIDs     []int64 `json:"BannedIDs"`
 }
 
-func (cfg *appConfig) write() error {
+func writeConfig(cfg appConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err
@@ -36,13 +36,14 @@ func (cfg *appConfig) write() error {
 	err = os.Rename(f.Name(), "config.json")
 	return err
 }
-func (cfg *appConfig) load() error {
+func loadConfig() (appConfig, error) {
+	cfg := appConfig{}
 	configFile, err := os.Open("config.json")
 	defer configFile.Close()
 	if err != nil {
-		return err
+		return cfg, err
 	}
 	jsonParser := json.NewDecoder(configFile)
 	err = jsonParser.Decode(&cfg)
-	return err
+	return cfg, err
 }

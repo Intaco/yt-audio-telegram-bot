@@ -35,15 +35,15 @@ func ffmpegDecode(title string, extension string) (string, error) {
 
 var pendingAnswers = make(map[int64]bool)
 
-func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig *appConfig) error {
+func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig appConfig) (appConfig, error) {
 	parts := strings.Split(query.Data, ".")
 	if len(parts) != 2 {
-		return fmt.Errorf("InlineKeyboardButton data incorrect, skipping")
+		return appConfig, fmt.Errorf("InlineKeyboardButton data incorrect, skipping")
 	}
 	status := parts[0]
 	chatID, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return err
+		return appConfig, err
 	}
 	answerText := "Successfully added chat to whitelist!"
 	_, ok := pendingAnswers[chatID]
@@ -60,9 +60,9 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, ap
 	}
 	cbConfig := tgbotapi.NewCallback(query.ID, answerText)
 	_, err = bot.AnswerCallbackQuery(cbConfig)
-	return err
+	return appConfig, err
 }
-func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg *appConfig) {
+func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg appConfig) {
 	chatID := message.Chat.ID
 	isBanned := false
 	for _, id := range cfg.BannedIDs {
@@ -204,8 +204,7 @@ func main() {
 		fmt.Println(err.Error())
 		return
 	}
-	var cfg = &appConfig{}
-	err = cfg.load()
+	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -224,13 +223,15 @@ func main() {
 	for update := range updates {
 		if update.Message == nil {
 			if update.CallbackQuery != nil {
-				err := handleCallbackQuery(bot, update.CallbackQuery, cfg)
+				newCfg, err := handleCallbackQuery(bot, update.CallbackQuery, cfg)
 				if err != nil {
 					fmt.Println(err.Error())
 				} else {
-					err = cfg.write() //TODO safer rewrite
+					err = writeConfig(newCfg)
 					if err != nil {
 						fmt.Println(err.Error())
+					} else {
+						cfg = newCfg
 					}
 				}
 			}
