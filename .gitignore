@@ -2,3 +2,4 @@ config.json
 tmp/*
 debug
 ydl.code-workspace
+dist/*

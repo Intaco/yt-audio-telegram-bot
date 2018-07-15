@@ -8,10 +8,11 @@ import (
 
 //AppConfig defines bot configuration properties
 type AppConfig struct {
-	BotAPIKey     string  `json:"BotAPIKey"`
-	AdminID       int64   `json:"AdminID"`
-	AuthorizedIDs []int64 `json:"AuthorizedIDs"`
-	BannedIDs     []int64 `json:"BannedIDs"`
+	BotAPIKey               string  `json:"BotAPIKey"`
+	AdminID                 int64   `json:"AdminID"`
+	AuthorizedIDs           []int64 `json:"AuthorizedIDs"`
+	BannedIDs               []int64 `json:"BannedIDs"`
+	MaxVideoDurationMinutes int64   `json:"MaxVideoDurationMinutes"`
 }
 
 func writeConfig(cfg AppConfig) error {

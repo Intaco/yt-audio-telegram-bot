@@ -9,14 +9,12 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/otium/ytdl"
 )
 
 const filesDirPath string = "./tmp/"
-const maxVideoDuration time.Duration = 1 * time.Hour //TODO move both to config
 
 func ffmpegDecode(title string, extension string) (string, error) {
 	mp3FileName := fmt.Sprintf("%s%s.%s", filesDirPath, title, "mp3")
@@ -91,25 +89,26 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		} else {
 			targetName = fmt.Sprintf("chat *%s*", targetName)
 		}
-
-		msg := tgbotapi.NewMessage(cfg.AdminID,
-			fmt.Sprintf("Message from unregistered: %s,\n allow video decoding?", targetName))
-		msg.ParseMode = "Markdown"
 		okData := fmt.Sprintf("OK.%d", chatID)
 		cancelData := fmt.Sprintf("CANCEL.%d", chatID)
 		btns := []tgbotapi.InlineKeyboardButton{
 			{Text: "OK", CallbackData: &okData},
 			{Text: "Cancel", CallbackData: &cancelData}}
 
-		answerMarkup := tgbotapi.NewInlineKeyboardMarkup(btns)
+		infoString := fmt.Sprintf("Message from unregistered: %s\nAllow video decoding?", targetName)
+		questionMsg := tgbotapi.NewMessage(cfg.AdminID, infoString)
+		questionMsg.ParseMode = "Markdown"
+		questionMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(btns)
 
-		msg.ReplyToMessageID = message.MessageID
-		msg.ReplyMarkup = answerMarkup
-		pendingAnswers[chatID] = true
-		_, err := bot.Send(msg)
+		forwardMsg := tgbotapi.NewForward(cfg.AdminID, chatID, message.MessageID)
+		_, err := bot.Send(forwardMsg)
+		_, err = bot.Send(questionMsg)
+
 		if err != nil {
 			fmt.Println(err.Error())
+			return
 		}
+		pendingAnswers[chatID] = true
 		return
 	}
 	_, err := url.ParseRequestURI(message.Text)
@@ -122,11 +121,11 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		fmt.Printf("Error getting video info. %s", err.Error())
 		return
 	}
-
-	if vid.Duration > maxVideoDuration {
+	videoDurationInMinutes := int64(vid.Duration.Minutes())
+	if videoDurationInMinutes > cfg.MaxVideoDurationMinutes {
 		fmt.Printf("Max video duration exceeded, download skipped")
 		msg := tgbotapi.NewMessage(chatID,
-			"I am not allowed to download videos with that duration :(")
+			fmt.Sprintf("I am not allowed to download videos longer than %d minutes :(", cfg.MaxVideoDurationMinutes))
 		_, err = bot.Send(msg)
 		if err != nil {
 			fmt.Println(err.Error())
