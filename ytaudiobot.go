@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -167,13 +166,8 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 			return
 		}
 	}
-	log.Printf("[%d] %s", message.From.ID, message.Text)
+	//log.Printf("[%d] %s", message.From.ID, message.Text)
 
-	mp3File, err := os.Open(mp3FileName)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
 	audioCfg := tgbotapi.NewAudioUpload(message.Chat.ID, mp3FileName)
 	audioCfg.ReplyToMessageID = message.MessageID
 
@@ -183,7 +177,6 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		fmt.Println(err.Error())
 		return
 	}
-	err = mp3File.Close()
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -214,6 +207,28 @@ func main() {
 		fmt.Println(err.Error()) //TODO not verbose
 		return
 	}
+	//mp3File, err := os.Open("./tmp/1.mp3")
+	//if err != nil {
+	//	fmt.Println(err.Error())
+	//	return
+	//}
+	//bytesMp3, err := ioutil.ReadAll(mp3File)
+	//if err != nil {
+	//	fmt.Println(err.Error())
+	//	return
+	//}
+	//
+	//file := tgbotapi.FileBytes{
+	//	Name:  "1.mp3",
+	//	Bytes: bytesMp3[2:],
+	//}
+	//
+	//upl := tgbotapi.NewAudioUpload(cfg.AdminID, file)
+	//_, err = bot.Send(upl)
+	//if err != nil {
+	//	fmt.Println(err.Error())
+	//	return
+	//}
 	bot.Debug = false
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -233,6 +248,8 @@ func main() {
 						cfg = newCfg
 					}
 				}
+			} else if update.ChannelPost != nil {
+				go handleMessage(bot, update.ChannelPost, cfg)
 			}
 			continue
 		} else {
