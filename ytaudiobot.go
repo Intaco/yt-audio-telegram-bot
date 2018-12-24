@@ -2,35 +2,72 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
+	re "regexp"
 	"strconv"
 	"strings"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
+	ac "github.com/jfk9w-go/aconvert-api"
+	"github.com/jfk9w-go/flu"
 	"github.com/otium/ytdl"
 )
 
 const filesDirPath string = "./tmp/"
 
-func ffmpegDecode(title string, extension string) (string, error) {
-	mp3FileName := fmt.Sprintf("%s%s.%s", filesDirPath, title, "mp3")
-	if _, err := os.Stat(mp3FileName); err == nil {
-		os.Remove(mp3FileName)
+var pendingAnswers = make(map[int64]bool)
+
+func makeFileName(title string, extension string) string {
+	return fmt.Sprintf("%s%s.%s", filesDirPath, title, extension)
+}
+
+func deleteFile(fileName string) {
+	if _, err := os.Stat(fileName); err == nil { //remove mp3 after success
+		err = os.Remove(fileName)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
 	}
-	videoName := fmt.Sprintf("%s%s.%s", filesDirPath, title, extension)
-	fmt.Printf("Start decoding %s\n", videoName)
-	cmd := exec.Command("ffmpeg", "-i", videoName, mp3FileName)
+}
+
+//Decode by FFMPEG by default
+func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
+	mp3FileName := makeFileName(title, "mp3")
+	deleteFile(mp3FileName) //remove target file if exists
+	fmt.Printf("Start FFMPEG decoding %s with\n", videoFileNameWithExt)
+	cmd := exec.Command("ffmpeg", "-i", videoFileNameWithExt, mp3FileName)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
-	fmt.Printf("ffmpeg output: %q\n", out.String())
+	outputText := strings.TrimSpace(out.String()) // normally, returns empty string if everything OK
+	if len(outputText) != 0 {
+		return "", errors.New("FFMPEG returned non-empty string: " + outputText)
+	}
 	return mp3FileName, err
 }
 
-var pendingAnswers = make(map[int64]bool)
+// Decode video via AConvert, used as fallback if ffmpeg decode fails or telegram can't accept ffmpeg-decoded audio (infrequent)
+func aconvertDecode(videoFileNameWithExt string, title string) (string, error) {
+	mp3FileName := makeFileName(title, "mp3")
+	deleteFile(mp3FileName) //remove target file if exists
+	var aconvertAPI = ac.NewApi(nil, ac.Config{
+		TestFile:   videoFileNameWithExt,
+		TestFormat: "mp3",
+	})
+	fmt.Printf("Start AConvert decoding %s with\n", videoFileNameWithExt)
+
+	r, err := aconvertAPI.Convert(
+		flu.NewFileSystemResource(videoFileNameWithExt), ac.NewOpts().TargetFormat("mp3"))
+	if err != nil {
+		return "", err
+	}
+	return mp3FileName, aconvertAPI.Download(r, flu.NewFileSystemResource(mp3FileName))
+}
 
 func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig AppConfig) (AppConfig, error) {
 	parts := strings.Split(query.Data, ".")
@@ -62,6 +99,8 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, ap
 func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfig) {
 	chatID := message.Chat.ID
 	isBanned := false
+	videoWasFFMPEGDecoded := true
+
 	for _, id := range cfg.BannedIDs {
 		if id == chatID {
 			isBanned = true
@@ -139,54 +178,61 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		return
 	}
 	bestFormat := bestFormats[0]
-	escapedVideoTitle := strings.Replace(vid.Title, "/", "", -1) // / - may be interpreted as path
-	newFileName := fmt.Sprintf("%s%s.%s", filesDirPath, escapedVideoTitle, bestFormat.Extension)
-	videoFile, err := os.Create(newFileName)
+
+	var regRule = re.MustCompile("[|/]*")
+	escapedVideoTitle := regRule.ReplaceAllString(vid.Title, "") // / - may be interpreted as path
+	videoFileNameWithExt := makeFileName(escapedVideoTitle, bestFormat.Extension)
+	videoFile, err := os.Create(videoFileNameWithExt)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 
-	fmt.Printf("started downloading video %s\n", newFileName) //TODO hide debug info
+	fmt.Printf("started downloading video %s\n", videoFileNameWithExt) //TODO hide debug info
 	err = vid.Download(bestFormat, videoFile)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 	videoFile.Close()
-	fmt.Printf("successfully finished downloading video %s\n", newFileName)
-	mp3FileName, err := ffmpegDecode(escapedVideoTitle, bestFormat.Extension)
+	fmt.Printf("successfully finished downloading video %s\n", videoFileNameWithExt)
+	mp3FileName, err := ffmpegDecode(videoFileNameWithExt, escapedVideoTitle)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	if _, err := os.Stat(newFileName); err == nil { //remove video file after success
-		err = os.Remove(newFileName)
+		videoWasFFMPEGDecoded = false
+		fmt.Printf("Failed decoding %s with FFMPEG, trying AConvert...\n%s", videoFileNameWithExt, err.Error())
+		mp3FileName, err = aconvertDecode(videoFileNameWithExt, escapedVideoTitle)
 		if err != nil {
-			fmt.Println(err.Error())
+			fmt.Printf("Failed decoding %s with AConvert, returning...\n%s", videoFileNameWithExt, err.Error())
+			deleteFile(videoFileNameWithExt) //remove video file after convert fail
 			return
 		}
 	}
-	audioCfg := tgbotapi.NewAudioUpload(message.Chat.ID, mp3FileName)
+
+	audioCfg := tgbotapi.NewAudioUpload(message.Chat.ID, mp3FileName) //TODO mp3FileName
 	audioCfg.ReplyToMessageID = message.MessageID
 
 	_, err = bot.Send(audioCfg)
 
 	if err != nil {
 		fmt.Println(err.Error())
-		return
-	}
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	if _, err := os.Stat(mp3FileName); err == nil { //remove mp3 after success
-		err = os.Remove(mp3FileName)
-		if err != nil {
-			fmt.Println(err.Error())
-			return
+		if videoWasFFMPEGDecoded { //if failed but has not tried AConvert decode, try AConvert
+			videoWasFFMPEGDecoded = false
+			mp3FileName, err = aconvertDecode(videoFileNameWithExt, escapedVideoTitle)
+			if err != nil {
+				fmt.Println(err.Error())
+			} else {
+				audioCfg := tgbotapi.NewAudioUpload(message.Chat.ID, mp3FileName) //TODO mp3FileName
+				audioCfg.ReplyToMessageID = message.MessageID
+				_, err = bot.Send(audioCfg)
+				if err != nil {
+					fmt.Println(err.Error())
+				}
+			}
+
 		}
 	}
+	deleteFile(mp3FileName)          //remove mp3 after all
+	deleteFile(videoFileNameWithExt) //remove video file after all
 	return
 }
 func main() {
