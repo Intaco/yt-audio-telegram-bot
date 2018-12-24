@@ -3,3 +3,4 @@ tmp/*
 debug
 ydl.code-workspace
 dist/*
+.vscode
