@@ -20,6 +20,7 @@ import (
 const filesDirPath string = "./tmp/"
 
 var pendingAnswers = make(map[int64]bool)
+var aconvertAPI ac.Api
 
 func makeFileName(title string, extension string) string {
 	return fmt.Sprintf("%s%s.%s", filesDirPath, title, extension)
@@ -39,7 +40,7 @@ func deleteFile(fileName string) {
 func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
 	mp3FileName := makeFileName(title, "mp3")
 	deleteFile(mp3FileName) //remove target file if exists
-	fmt.Printf("Start FFMPEG decoding %s with\n", videoFileNameWithExt)
+	fmt.Printf("Start FFMPEG decoding %s\n", videoFileNameWithExt)
 	cmd := exec.Command("ffmpeg", "-i", videoFileNameWithExt, mp3FileName)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -55,11 +56,14 @@ func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
 func aconvertDecode(videoFileNameWithExt string, title string) (string, error) {
 	mp3FileName := makeFileName(title, "mp3")
 	deleteFile(mp3FileName) //remove target file if exists
-	var aconvertAPI = ac.NewApi(nil, ac.Config{
-		TestFile:   videoFileNameWithExt,
-		TestFormat: "mp3",
-	})
-	fmt.Printf("Start AConvert decoding %s with\n", videoFileNameWithExt)
+	if aconvertAPI == nil { //init aconvertAPI once
+		aconvertAPI = ac.NewApi(nil, ac.Config{
+			TestFile:   videoFileNameWithExt,
+			TestFormat: "mp3",
+		})
+	}
+
+	fmt.Printf("Start AConvert decoding %s\n", videoFileNameWithExt)
 
 	r, err := aconvertAPI.Convert(
 		flu.NewFileSystemResource(videoFileNameWithExt), ac.NewOpts().TargetFormat("mp3"))
