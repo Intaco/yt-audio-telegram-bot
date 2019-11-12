@@ -4,3 +4,5 @@ debug
 ydl.code-workspace
 dist/*
 .vscode
+.idea
+.DS_Store
