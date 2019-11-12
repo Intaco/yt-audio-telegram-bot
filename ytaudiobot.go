@@ -7,20 +7,18 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	re "regexp"
 	"strconv"
 	"strings"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	ac "github.com/jfk9w-go/aconvert-api"
 	"github.com/jfk9w-go/flu"
-	"github.com/otium/ytdl"
 )
 
 const filesDirPath string = "./tmp/"
 
 var pendingAnswers = make(map[int64]bool)
-var aconvertAPI ac.Api
+var aconvertAPI *ac.Client
 
 func makeFileName(title string, extension string) string {
 	return fmt.Sprintf("%s%s.%s", filesDirPath, title, extension)
@@ -49,6 +47,7 @@ func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
 	if len(outputText) != 0 {
 		return "", errors.New("FFMPEG returned non-empty string: " + outputText)
 	}
+	fmt.Printf("FFMPEG decoded normally: %s\n", videoFileNameWithExt)
 	return mp3FileName, err
 }
 
@@ -57,7 +56,7 @@ func aconvertDecode(videoFileNameWithExt string, title string) (string, error) {
 	mp3FileName := makeFileName(title, "mp3")
 	deleteFile(mp3FileName) //remove target file if exists
 	if aconvertAPI == nil { //init aconvertAPI once
-		aconvertAPI = ac.NewApi(nil, ac.Config{
+		aconvertAPI = ac.NewClient(nil, &ac.Config{
 			TestFile:   videoFileNameWithExt,
 			TestFormat: "mp3",
 		})
@@ -65,7 +64,7 @@ func aconvertDecode(videoFileNameWithExt string, title string) (string, error) {
 
 	fmt.Printf("Start AConvert decoding %s\n", videoFileNameWithExt)
 
-	r, err := aconvertAPI.Convert(
+	r, err := aconvertAPI.ConvertResource(
 		flu.NewFileSystemResource(videoFileNameWithExt), ac.NewOpts().TargetFormat("mp3"))
 	if err != nil {
 		return "", err
@@ -158,13 +157,13 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		fmt.Printf("Not url, skipping message")
 		return
 	}
-	vid, err := ytdl.GetVideoInfo(message.Text)
-	if vid == nil || err != nil {
-		fmt.Printf("Error getting video info. %s", err.Error())
+
+	isVideoDurationOk, err := isVideoInDurationLimits(message.Text, cfg.MaxVideoDurationMinutes)
+	if err != nil {
+		fmt.Println(err.Error())
 		return
 	}
-	videoDurationInMinutes := int64(vid.Duration.Minutes())
-	if videoDurationInMinutes > cfg.MaxVideoDurationMinutes {
+	if !isVideoDurationOk {
 		fmt.Printf("Max video duration exceeded, download skipped")
 		msg := tgbotapi.NewMessage(chatID,
 			fmt.Sprintf("I am not allowed to download videos longer than %d minutes :(", cfg.MaxVideoDurationMinutes))
@@ -174,32 +173,12 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 		}
 		return
 	}
-
-	bestFormats := vid.Formats.Best(ytdl.FormatAudioBitrateKey)
-
-	if len(bestFormats) == 0 || bestFormats[0].AudioBitrate == 0 {
-		fmt.Printf("Video has no suitable AudioBitrate, download failed") //TODO message for tg-user?
-		return
-	}
-	bestFormat := bestFormats[0]
-
-	var regRule = re.MustCompile("[|/]*")
-	escapedVideoTitle := regRule.ReplaceAllString(vid.Title, "") // / - may be interpreted as path
-	videoFileNameWithExt := makeFileName(escapedVideoTitle, bestFormat.Extension)
-	videoFile, err := os.Create(videoFileNameWithExt)
+	err, videoFileNameWithExt, escapedVideoTitle, _ := downloadVideo(message.Text, filesDirPath)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 
-	fmt.Printf("started downloading video %s\n", videoFileNameWithExt) //TODO hide debug info
-	err = vid.Download(bestFormat, videoFile)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	videoFile.Close()
-	fmt.Printf("successfully finished downloading video %s\n", videoFileNameWithExt)
 	mp3FileName, err := ffmpegDecode(videoFileNameWithExt, escapedVideoTitle)
 	if err != nil {
 		videoWasFFMPEGDecoded = false
