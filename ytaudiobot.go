@@ -90,8 +90,10 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, ap
 		if status != "OK" {
 			answerText = "Chat was blacklisted for bot!"
 			appConfig.BannedIDs = append(appConfig.BannedIDs, chatID)
+			bot.Send(tgbotapi.NewMessage(chatID, "You were not allowed to use that bot. Sorry.")) //ignore result
 		} else {
 			appConfig.AuthorizedIDs = append(appConfig.AuthorizedIDs, chatID)
+			bot.Send(tgbotapi.NewMessage(chatID, "Successfully authenticated. Now you can download videos!")) //ignore result
 		}
 		delete(pendingAnswers, chatID)
 	}
@@ -123,7 +125,8 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 			}
 		}
 	}
-	if !isAuthorized {
+	_, isAlreadyPending := pendingAnswers[chatID]
+	if !isAuthorized && !isAlreadyPending {
 		targetName := message.Chat.Title
 		if targetName == "" {
 			targetName = fmt.Sprintf("user *@%s*", message.From.UserName)
@@ -149,6 +152,7 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 			fmt.Println(err.Error())
 			return
 		}
+		bot.Send(tgbotapi.NewMessage(chatID, "Awaiting authentication from bot admin...")) //ignore if fails
 		pendingAnswers[chatID] = true
 		return
 	}
