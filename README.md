@@ -4,7 +4,7 @@ A configurable telegram bot for downloading, converting and publishing youtube v
 
 # Prerequisites
 
-This application expects that you have a `ffmpeg` and `youtube-dl` binaries in your environment. For Ubuntu you can type
+This application expects that you have a `ffmpeg` (optional, but highly recommended) and `youtube-dl` binaries in your environment. For Ubuntu you can type
 ```
 sudo apt install ffmpeg
 sudo curl -L https://yt-dl.org/downloads/latest/youtube-dl -o /usr/local/bin/youtube-dl
