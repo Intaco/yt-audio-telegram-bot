@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -43,6 +44,9 @@ func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
 	outputText := strings.TrimSpace(out.String()) // normally, returns empty string if everything OK
 	if len(outputText) != 0 {
 		return "", errors.New("FFMPEG returned non-empty string: " + outputText)
@@ -55,21 +59,18 @@ func ffmpegDecode(videoFileNameWithExt string, title string) (string, error) {
 func aconvertDecode(videoFileNameWithExt string, title string) (string, error) {
 	mp3FileName := makeFileName(title, "mp3")
 	deleteFile(mp3FileName) //remove target file if exists
+	fluMp3File := flu.File(mp3FileName)
 	if aconvertAPI == nil { //init aconvertAPI once
-		aconvertAPI = ac.NewClient(nil, &ac.Config{
-			TestFile:   videoFileNameWithExt,
-			TestFormat: "mp3",
-		})
+		aconvertAPI = ac.NewClient(nil, nil, nil)
 	}
 
 	fmt.Printf("Start AConvert decoding %s\n", videoFileNameWithExt)
-
-	r, err := aconvertAPI.ConvertResource(
-		flu.NewFileSystemResource(videoFileNameWithExt), ac.NewOpts().TargetFormat("mp3"))
+	r, err := aconvertAPI.Convert(context.Background(), flu.File(videoFileNameWithExt), make(ac.Opts).TargetFormat("mp3"))
 	if err != nil {
 		return "", err
 	}
-	return mp3FileName, aconvertAPI.Download(r, flu.NewFileSystemResource(mp3FileName))
+	err = aconvertAPI.GET(r.URL()).Execute().DecodeBodyTo(fluMp3File).Error
+	return mp3FileName, err
 }
 
 func handleCallbackQuery(bot *tgbotapi.BotAPI, query *tgbotapi.CallbackQuery, appConfig AppConfig) (AppConfig, error) {
@@ -179,14 +180,14 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cfg AppConfi
 	}
 	err, videoFileNameWithExt, escapedVideoTitle, _ := downloadVideo(message.Text, filesDirPath)
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Println("video download failed: ", err.Error())
 		return
 	}
 
 	mp3FileName, err := ffmpegDecode(videoFileNameWithExt, escapedVideoTitle)
 	if err != nil {
 		videoWasFFMPEGDecoded = false
-		fmt.Printf("Failed decoding %s with FFMPEG, trying AConvert...\n%s", videoFileNameWithExt, err.Error())
+		fmt.Printf("Failed decoding %s with FFMPEG: %s, now trying AConvert...\n", videoFileNameWithExt, err.Error())
 		mp3FileName, err = aconvertDecode(videoFileNameWithExt, escapedVideoTitle)
 		if err != nil {
 			fmt.Printf("Failed decoding %s with AConvert, returning...\n%s", videoFileNameWithExt, err.Error())

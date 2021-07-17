@@ -42,8 +42,8 @@ func getTitleAndExt(path string) (error, string, string) {
 
 func downloadVideo(uri string, filesDirectory string) (error, string, string, string) {
 	var regRule = re.MustCompile("[|/\n]*") // / - may be interpreted as path
-
-	cmd := exec.Command("youtube-dl", "-f bestaudio", "--get-filename", "-o", "%(title)s.%(ext)s", uri)
+	fmt.Printf("Process video uri: %s\n", uri)
+	cmd := exec.Command("youtube-dl", "--no-playlist", "-f bestaudio", "--get-filename", "-o", "%(title)s.%(ext)s", uri)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -52,7 +52,7 @@ func downloadVideo(uri string, filesDirectory string) (error, string, string, st
 	}
 	downloadFilename := regRule.ReplaceAllString(out.String(), "")
 	fmt.Printf("started downloading video %s\n", uri)
-	cmd = exec.Command("youtube-dl", "--quiet", "-f bestaudio", "-o", filesDirectory+"%(title)s.%(ext)s", uri)
+	cmd = exec.Command("youtube-dl", "--no-playlist", "--quiet", "-f bestaudio", "-o", filesDirectory+"%(title)s.%(ext)s", uri)
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
